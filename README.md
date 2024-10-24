@@ -1,4 +1,4 @@
-# weather-monitoring-system# Weather Monitoring System
+# Weather Monitoring System
 
 ## Overview
 
