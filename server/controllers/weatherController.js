@@ -1,7 +1,5 @@
-// controllers/weatherController.js
-
 const axios = require('axios');
-const WeatherSummary = require('../models/weatherSummary')
+const WeatherSummary = require('../models/weatherSummary');
 
 async function fetchWeatherData(cities) {
     const apiKey = process.env.OPENWEATHERMAP_API_KEY;
@@ -30,7 +28,6 @@ async function fetchWeatherData(cities) {
 async function saveDailySummary(weatherUpdates) {
     const date = new Date().toISOString().split('T')[0];
     
-    // Group by city and calculate aggregates
     const summaries = {};
 
     for (const update of weatherUpdates) {
@@ -53,23 +50,19 @@ async function saveDailySummary(weatherUpdates) {
         summaries[city].minTemp = Math.min(summaries[city].minTemp, update.temp);
         summaries[city].count++;
         
-        // Count conditions for dominant condition calculation
         if (!summaries[city].conditionsCount[update.condition]) {
             summaries[city].conditionsCount[update.condition] = 0;
         }
         summaries[city].conditionsCount[update.condition]++;
         
-        // Aggregate humidity and wind speed for bonus features
         summaries[city].totalHumidity += update.humidity;
         summaries[city].totalWindSpeed += update.windSpeed;
     }
 
-    // Save summary to MongoDB or any other storage solution
     for (const city in summaries) {
         const summaryData = summaries[city];
         const averageTemperature = summaryData.totalTemp / summaryData.count;
         
-        // Determine dominant condition based on counts
         const dominantCondition = Object.keys(summaryData.conditionsCount).reduce((a, b) => 
             summaryData.conditionsCount[a] > summaryData.conditionsCount[b] ? a : b);
 
@@ -80,12 +73,21 @@ async function saveDailySummary(weatherUpdates) {
             maxTemperature: summaryData.maxTemp,
             minTemperature: summaryData.minTemp,
             dominantCondition,
-            humidity: summaryData.totalHumidity / summaryData.count, // Average humidity
-            windSpeed: summaryData.totalWindSpeed / summaryData.count, // Average wind speed
+            humidity: summaryData.totalHumidity / summaryData.count,
+            windSpeed: summaryData.totalWindSpeed / summaryData.count,
         });
 
         await summary.save();
     }
 }
 
-module.exports = { fetchWeatherData, saveDailySummary };
+async function checkAlerts(weatherUpdates, thresholds) {
+    for (const update of weatherUpdates) {
+        if (update.temp > thresholds.temperature) {
+            console.log(`Alert: ${update.city} temperature exceeds ${thresholds.temperature}°C! Current: ${update.temp}°C`);
+            // Implement email notification logic here if required
+        }
+    }
+}
+
+module.exports = { fetchWeatherData, saveDailySummary, checkAlerts };

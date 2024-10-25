@@ -1,30 +1,44 @@
+// src/App.js
 import React, { useEffect, useState } from 'react';
-import io from 'socket.io-client';
-import WeatherList from './components/WeatherList';
-
-const socket = io('http://localhost:4000'); // Backend server URL
+import axios from 'axios';
+import WeatherSummary from './components/WeatherSummary';
 
 const App = () => {
-  const [weatherData, setWeatherData] = useState([]);
+    const [summaries, setSummaries] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  useEffect(() => {
-    // Listen for real-time weather updates
-    socket.on('weather-update', (data) => {
-      setWeatherData(data);
-    });
+    useEffect(() => {
+        const fetchSummaries = async () => {
+            try {
+                // Fetch all weather summaries
+                const response = await axios.get('http://localhost:5000/api/weather/summaries');
+                setSummaries(response.data);
+                setLoading(false);
+            } catch (err) {
+                setError('Error fetching weather summaries');
+                setLoading(false);
+            }
+        };
 
-    // Clean up the socket connection when the component unmounts
-    return () => {
-      socket.off('weather-update');
-    };
-  }, []);
+        fetchSummaries();
+    }, []);
 
-  return (
-    <div className="bg-blue-50 min-h-screen flex flex-col items-center justify-center">
-      <h1 className="text-4xl font-bold text-gray-800 mb-8">Real-Time Weather Monitoring</h1>
-      <WeatherList weatherData={weatherData} />
-    </div>
-  );
+    if (loading) return <div>Loading...</div>;
+    if (error) return <div>{error}</div>;
+
+    return (
+        <div className="container mx-auto p-5">
+            <h1 className="text-3xl font-bold mb-5">Weather Summaries</h1>
+            {summaries.length === 0 ? (
+                <p>No weather summaries available.</p>
+            ) : (
+                summaries.map((summary) => (
+                    <WeatherSummary key={summary._id} summary={summary} />
+                ))
+            )}
+        </div>
+    );
 };
 
 export default App;
