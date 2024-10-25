@@ -1,12 +1,16 @@
-const pool = require('../config/db');
+// models/WeatherSummary.js
 
-const createWeatherSummary = async (data) => {
-  const query = `
-    INSERT INTO weather_summary (city, avg_temp, max_temp, min_temp, dominant_condition, timestamp)
-    VALUES ($1, $2, $3, $4, $5, NOW())
-  `;
-  const { city, avgTemp, maxTemp, minTemp, dominantCondition } = data;
-  await pool.query(query, [city, avgTemp, maxTemp, minTemp, dominantCondition]);
-};
+const mongoose = require('mongoose');
 
-module.exports = { createWeatherSummary };
+const weatherSchema = new mongoose.Schema({
+    city: { type: String, required: true },
+    date: { type: String, required: true }, // Store only date part (YYYY-MM-DD)
+    averageTemperature: { type: Number, required: true },
+    maxTemperature: { type: Number, required: true },
+    minTemperature: { type: Number, required: true },
+    dominantCondition: { type: String, required: true },
+    humidity: { type: Number }, // Bonus feature
+    windSpeed: { type: Number }, // Bonus feature
+});
+
+module.exports = mongoose.model('WeatherSummary', weatherSchema);
