@@ -1,93 +1,86 @@
 const axios = require('axios');
 const WeatherSummary = require('../models/weatherSummary');
+const nodemailer = require('nodemailer');
 
-async function fetchWeatherData(cities) {
-    const apiKey = process.env.OPENWEATHERMAP_API_KEY;
+const apiKey = process.env.OPENWEATHERMAP_API_KEY;
+const thresholds = { temperature: 35 }; // Can be configured
+
+const fetchWeatherData = async (cities) => {
     const weatherUpdates = [];
-
     for (const city of cities) {
         const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=metric`);
         const data = response.data;
-
-        const weatherInfo = {
+        weatherUpdates.push({
             city,
             temp: data.main.temp,
             feels_like: data.main.feels_like,
             condition: data.weather[0].main,
             humidity: data.main.humidity,
             windSpeed: data.wind.speed,
-            dt: new Date(data.dt * 1000), 
-        };
-
-        weatherUpdates.push(weatherInfo);
+            dt: new Date(data.dt * 1000),
+        });
     }
-
     return weatherUpdates;
-}
+};
 
-async function saveDailySummary(weatherUpdates) {
+const saveDailySummary = async (weatherUpdates) => {
     const date = new Date().toISOString().split('T')[0];
-    
     const summaries = {};
 
-    for (const update of weatherUpdates) {
-        const city = update.city;
-        if (!summaries[city]) {
-            summaries[city] = {
-                city,
-                totalTemp: 0,
-                maxTemp: -Infinity,
-                minTemp: Infinity,
-                count: 0,
-                conditionsCount: {},
-                totalHumidity: 0,
-                totalWindSpeed: 0,
-            };
-        }
-
-        summaries[city].totalTemp += update.temp;
-        summaries[city].maxTemp = Math.max(summaries[city].maxTemp, update.temp);
-        summaries[city].minTemp = Math.min(summaries[city].minTemp, update.temp);
+    weatherUpdates.forEach((update) => {
+        const { city, temp, condition, humidity, windSpeed } = update;
+        if (!summaries[city]) summaries[city] = { city, temps: [], conditions: {}, humidity: 0, windSpeed: 0, count: 0 };
+        summaries[city].temps.push(temp);
+        summaries[city].humidity += humidity;
+        summaries[city].windSpeed += windSpeed;
         summaries[city].count++;
-        
-        if (!summaries[city].conditionsCount[update.condition]) {
-            summaries[city].conditionsCount[update.condition] = 0;
-        }
-        summaries[city].conditionsCount[update.condition]++;
-        
-        summaries[city].totalHumidity += update.humidity;
-        summaries[city].totalWindSpeed += update.windSpeed;
-    }
+        summaries[city].conditions[condition] = (summaries[city].conditions[condition] || 0) + 1;
+    });
 
     for (const city in summaries) {
-        const summaryData = summaries[city];
-        const averageTemperature = summaryData.totalTemp / summaryData.count;
-        
-        const dominantCondition = Object.keys(summaryData.conditionsCount).reduce((a, b) => 
-            summaryData.conditionsCount[a] > summaryData.conditionsCount[b] ? a : b);
-
+        const data = summaries[city];
+        const dominantCondition = Object.keys(data.conditions).reduce((a, b) => data.conditions[a] > data.conditions[b] ? a : b);
         const summary = new WeatherSummary({
-            city: summaryData.city,
+            city: data.city,
             date,
-            averageTemperature,
-            maxTemperature: summaryData.maxTemp,
-            minTemperature: summaryData.minTemp,
+            averageTemperature: data.temps.reduce((a, b) => a + b, 0) / data.count,
+            maxTemperature: Math.max(...data.temps),
+            minTemperature: Math.min(...data.temps),
             dominantCondition,
-            humidity: summaryData.totalHumidity / summaryData.count,
-            windSpeed: summaryData.totalWindSpeed / summaryData.count,
+            humidity: data.humidity / data.count,
+            windSpeed: data.windSpeed / data.count,
         });
-
         await summary.save();
     }
-}
+};
 
-async function checkAlerts(weatherUpdates, thresholds) {
+const checkAlerts = async (weatherUpdates) => {
     for (const update of weatherUpdates) {
         if (update.temp > thresholds.temperature) {
-            console.log(`Alert: ${update.city} temperature exceeds ${thresholds.temperature}°C! Current: ${update.temp}°C`);
-            // Implement email notification logic here if required
+            console.log(`Alert: ${update.city} temperature exceeds ${thresholds.temperature}°C!`);
+            await sendAlertEmail(update);
         }
     }
-}
+};
 
-module.exports = { fetchWeatherData, saveDailySummary, checkAlerts };
+const sendAlertEmail = async (update) => {
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: process.env.EMAIL, pass: process.env.EMAIL_PASSWORD }
+    });
+    await transporter.sendMail({
+        from: process.env.EMAIL,
+        to: 'user@example.com',
+        subject: `Weather Alert for ${update.city}`,
+        text: `Current temperature in ${update.city} is ${update.temp}°C, exceeding the threshold.`,
+    });
+};
+
+const fetchAndSaveWeatherData = async () => {
+    const cities = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
+    const weatherUpdates = await fetchWeatherData(cities);
+    await saveDailySummary(weatherUpdates);
+    await checkAlerts(weatherUpdates);
+};
+
+module.exports = { fetchWeatherData, saveDailySummary, checkAlerts, fetchAndSaveWeatherData };
