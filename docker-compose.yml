@@ -1,46 +1,32 @@
-version: '3.7'
+version: '3.8'
 
 services:
-  server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    image: myapp-server
-    container_name: myapp-node-server
-    command: /usr/src/app/node_modules/.bin/node server.js
-    volumes:
-      - ./server/:/usr/src/app
-      - /usr/src/app/node_modules
-    ports:
-      - "5000:5000"
-    env_file: ./server/.env
-    environment:
-      - NODE_ENV=development
-    networks:
-      - app-network
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    image: myapp-frontend
-    container_name: myapp-react-frontend
-    command: npm start
-    volumes:
-      - ./frontend/:/usr/app
-      - /usr/app/node_modules
-    depends_on:
-      - server
+    build: ./frontend
     ports:
       - "3000:3000"
-    networks:
-      - app-network
+    environment:
+      - VITE_API_URL=http://backend:5000
+    depends_on:
+      - backend
 
-networks:
-    app-network:
-        driver: bridge
+  backend:
+    build: ./server
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/weather
+      - PORT=5000
+      - OPENWEATHER_API_KEY=your_openweather_api_key
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
 
 volumes:
-    data-volume:
-    node_modules:
-    web-root:
-      driver: local
+  mongodb_data:
