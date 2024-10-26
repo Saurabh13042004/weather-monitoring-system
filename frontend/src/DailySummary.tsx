@@ -45,6 +45,7 @@ const DailySummary = ({ city, temperatureUnit }: DailySummaryProps) => {
             <CardTitle>{summary.date}</CardTitle>
           </CardHeader>
           <CardContent>
+            <p>City: {city}</p>
             <p>Average Temperature: {convertTemperature(summary.avgTemp).toFixed(1)}°{temperatureUnit === 'celsius' ? 'C' : 'F'}</p>
             <p>Maximum Temperature: {convertTemperature(summary.maxTemp).toFixed(1)}°{temperatureUnit === 'celsius' ? 'C' : 'F'}</p>
             <p>Minimum Temperature: {convertTemperature(summary.minTemp).toFixed(1)}°{temperatureUnit === 'celsius' ? 'C' : 'F'}</p>
