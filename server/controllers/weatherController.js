@@ -1,86 +1,146 @@
-const axios = require('axios');
-const WeatherSummary = require('../models/weatherSummary');
-const nodemailer = require('nodemailer');
+const WeatherData = require('../models/WeatherData');
+const DailySummary = require('../models/DailySummary');
+const Alert = require('../models/Alert');
+const Config = require('../models/Config');
+const AlertConfig = require('../models/AlertConfig');
+const WeatherService = require('../services/weatherService');
 
-const apiKey = process.env.OPENWEATHERMAP_API_KEY;
-const thresholds = { temperature: 35 }; // Can be configured
+let weatherService;
 
-const fetchWeatherData = async (cities) => {
-    const weatherUpdates = [];
-    for (const city of cities) {
-        const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=metric`);
-        const data = response.data;
-        weatherUpdates.push({
+exports.setWeatherService = (service) => {
+  weatherService = service;
+};
+
+exports.getCurrentWeather = async (req, res) => {
+    try {
+      const cities = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
+      const result = {};
+  
+      for (const city of cities) {
+        const latestWeather = await WeatherData.findOne({ city }).sort('-dt');
+        if (latestWeather) {
+          result[city] = latestWeather;
+        } else {
+          // If no data is found for a city, provide a placeholder
+          result[city] = {
             city,
-            temp: data.main.temp,
-            feels_like: data.main.feels_like,
-            condition: data.weather[0].main,
-            humidity: data.main.humidity,
-            windSpeed: data.wind.speed,
-            dt: new Date(data.dt * 1000),
-        });
-    }
-    return weatherUpdates;
-};
-
-const saveDailySummary = async (weatherUpdates) => {
-    const date = new Date().toISOString().split('T')[0];
-    const summaries = {};
-
-    weatherUpdates.forEach((update) => {
-        const { city, temp, condition, humidity, windSpeed } = update;
-        if (!summaries[city]) summaries[city] = { city, temps: [], conditions: {}, humidity: 0, windSpeed: 0, count: 0 };
-        summaries[city].temps.push(temp);
-        summaries[city].humidity += humidity;
-        summaries[city].windSpeed += windSpeed;
-        summaries[city].count++;
-        summaries[city].conditions[condition] = (summaries[city].conditions[condition] || 0) + 1;
-    });
-
-    for (const city in summaries) {
-        const data = summaries[city];
-        const dominantCondition = Object.keys(data.conditions).reduce((a, b) => data.conditions[a] > data.conditions[b] ? a : b);
-        const summary = new WeatherSummary({
-            city: data.city,
-            date,
-            averageTemperature: data.temps.reduce((a, b) => a + b, 0) / data.count,
-            maxTemperature: Math.max(...data.temps),
-            minTemperature: Math.min(...data.temps),
-            dominantCondition,
-            humidity: data.humidity / data.count,
-            windSpeed: data.windSpeed / data.count,
-        });
-        await summary.save();
-    }
-};
-
-const checkAlerts = async (weatherUpdates) => {
-    for (const update of weatherUpdates) {
-        if (update.temp > thresholds.temperature) {
-            console.log(`Alert: ${update.city} temperature exceeds ${thresholds.temperature}°C!`);
-            await sendAlertEmail(update);
+            main: 'N/A',
+            temp: 0,
+            feels_like: 0,
+            humidity: 0,
+            wind_speed: 0,
+            dt: Math.floor(Date.now() / 1000),
+            timestamp: new Date().toISOString()
+          };
         }
+      }
+  
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching current weather data", error);
+      res.status(500).json({ error: "Error fetching current weather data" });
     }
+  };
+
+exports.getHistoricalWeather = async (req, res) => {
+  try {
+    const { city } = req.params;
+    const data = await WeatherData.find({ city }).sort('-dt').limit(24);
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching historical data:", error);
+    res.status(500).json({ error: "Error fetching historical data" });
+  }
 };
 
-const sendAlertEmail = async (update) => {
-    const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: process.env.EMAIL, pass: process.env.EMAIL_PASSWORD }
-    });
-    await transporter.sendMail({
-        from: process.env.EMAIL,
-        to: 'user@example.com',
-        subject: `Weather Alert for ${update.city}`,
-        text: `Current temperature in ${update.city} is ${update.temp}°C, exceeding the threshold.`,
-    });
+exports.getDailySummary = async (req, res) => {
+  try {
+    const summaries = await DailySummary.find({
+      city: req.params.city,
+      date: {
+        $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      },
+    }).sort('-date');
+
+    res.json(summaries);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching daily summaries" });
+  }
 };
 
-const fetchAndSaveWeatherData = async () => {
-    const cities = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
-    const weatherUpdates = await fetchWeatherData(cities);
-    await saveDailySummary(weatherUpdates);
-    await checkAlerts(weatherUpdates);
+exports.getAlerts = async (req, res) => {
+  try {
+    const alerts = await Alert.find().sort('-timestamp').limit(10);
+    res.json(alerts);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching alerts" });
+  }
 };
 
-module.exports = { fetchWeatherData, saveDailySummary, checkAlerts, fetchAndSaveWeatherData };
+exports.getConfig = async (req, res) => {
+  try {
+    let config = await Config.findOne();
+    if (!config) {
+      config = new Config({ updateInterval: 60 });
+      await config.save();
+    }
+    res.json(config);
+  } catch (error) {
+    console.error("Error fetching configuration:", error);
+    res.status(500).json({ error: "Error fetching configuration" });
+  }
+};
+
+exports.updateConfig = async (req, res) => {
+  try {
+    const { updateInterval, temperatureUnit } = req.body;
+    let  config = await Config.findOne();
+    if (!config) {
+      config = new Config();
+    }
+    config.updateInterval = updateInterval || config.updateInterval;
+    config.temperatureUnit = temperatureUnit || config.temperatureUnit;
+    await config.save();
+
+    if (weatherService) {
+      await weatherService.updateConfig(config);
+    }
+
+    res.json(config);
+  } catch (error) {
+    console.error("Error updating configuration:", error);
+    res.status(500).json({ error: "Error updating configuration" });
+  }
+};
+
+exports.getAlertConfig = async (req, res) => {
+  try {
+    let alertConfig = await AlertConfig.findOne();
+    if (!alertConfig) {
+      alertConfig = new AlertConfig({ city: "Delhi", threshold: 35 });
+      await alertConfig.save();
+    }
+    res.json(alertConfig);
+  } catch (error) {
+    console.error("Error fetching alert configuration:", error);
+    res.status(500).json({ error: "Error fetching alert configuration" });
+  }
+};
+
+exports.updateAlertConfig = async (req, res) => {
+  try {
+    const { city, threshold, email } = req.body;
+    let alertConfig = await AlertConfig.findOne();
+    if (!alertConfig) {
+      alertConfig = new AlertConfig();
+    }
+    alertConfig.city = city;
+    alertConfig.threshold = threshold;
+    alertConfig.email = email;
+    await alertConfig.save();
+    res.json(alertConfig);
+  } catch (error) {
+    console.error("Error updating alert configuration:", error);
+    res.status(500).json({ error: "Error updating alert configuration" });
+  }
+};

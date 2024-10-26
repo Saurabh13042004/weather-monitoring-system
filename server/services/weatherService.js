@@ -1,101 +1,144 @@
 const axios = require('axios');
-const { kelvinToCelsius } = require('../utils/temperature');
-const { createWeatherSummary } = require('../models/weatherSummary');
-require('dotenv').config();
+const WeatherData = require('../models/WeatherData');
+const DailySummary = require('../models/DailySummary');
+const Alert = require('../models/Alert');
+const Config = require('../models/Config');
+const AlertConfig = require('../models/AlertConfig');
 
-const cities = [
-  { name: 'Delhi', lat: 28.7041, lon: 77.1025 },
-  { name: 'Mumbai', lat: 19.0760, lon: 72.8777 },
-  { name: 'Chennai', lat: 13.0827, lon: 80.2707 },
-  { name: 'Bangalore', lat: 12.9716, lon: 77.5946 },
-  { name: 'Kolkata', lat: 22.5726, lon: 88.3639 },
-  { name: 'Hyderabad', lat: 17.3850, lon: 78.4867 },
-];
-
-const apiKey = process.env.API_KEY;
-
-// Fetch weather data from OpenWeatherMap API
-const fetchWeatherData = async () => {
-  try {
-    const weatherData = await Promise.all(
-      cities.map(async (city) => {
-        const response = await axios.get(
-          `https://api.openweathermap.org/data/2.5/weather?lat=${city.lat}&lon=${city.lon}&appid=${apiKey}`
-        );
-        const { temp, feels_like } = response.data.main;
-        const condition = response.data.weather[0].main;
-
-        return {
-          city: city.name,
-          temp: kelvinToCelsius(temp),
-          feels_like: kelvinToCelsius(feels_like),
-          condition,
-        };
-      })
-    );
-
-    return weatherData;
-  } catch (error) {
-    console.error(`Error fetching weather data: ${error.message}`);
-    throw error;
+class WeatherService {
+  constructor(io) {
+    this.io = io;
+    this.cities = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
+    this.apiKey = process.env.OPENWEATHER_API_KEY;
+    this.updateInterval = null;
+    this.updateIntervalId = null;
   }
-};
 
-// Roll up daily summary
-const calculateDailySummary = (weatherData) => {
-  const citySummaries = weatherData.reduce((acc, data) => {
-    if (!acc[data.city]) {
-      acc[data.city] = {
-        temps: [],
-        conditions: {},
-        maxTemp: -Infinity,
-        minTemp: Infinity,
+  async startMonitoring() {
+    const config = await Config.findOne() || await Config.create({ updateInterval: 60 });
+    this.updateInterval = config.updateInterval * 60 * 1000;
+    this.fetchAndProcessAllCities();
+    this.updateIntervalId = setInterval(() => this.fetchAndProcessAllCities(), this.updateInterval);
+  }
+  async updateConfig(newConfig) {
+    if (newConfig.updateInterval) {
+      this.updateInterval = newConfig.updateInterval * 60 * 1000;
+      clearInterval(this.updateIntervalId);
+      this.updateIntervalId = setInterval(() => this.fetchAndProcessAllCities(), this.updateInterval);
+    }
+  }
+
+  async fetchAndProcessAllCities() {
+    for (const city of this.cities) {
+      const data = await this.fetchCityWeather(city);
+      if (data) {
+        await this.processWeatherData(data);
+        this.io.emit('weatherUpdate', { [city]: data });
+      }
+    }
+  }
+
+  async fetchCityWeather(city) {
+    try {
+      const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${city},IN&appid=${this.apiKey}`);
+      const currentTime = Math.floor(Date.now() / 1000);
+      return {
+        city,
+        main: response.data.weather[0].main,
+        temp: this.kelvinToCelsius(response.data.main.temp),
+        feels_like: this.kelvinToCelsius(response.data.main.feels_like),
+        humidity: response.data.main.humidity,
+        wind_speed: response.data.wind.speed,
+        dt: currentTime,
+        timestamp: new Date(currentTime * 1000).toISOString()
       };
+    } catch (error) {
+      console.error(`Error fetching weather for ${city}:`, error);
+      return null;
     }
-
-    acc[data.city].temps.push(parseFloat(data.temp));
-
-    // Calculate max and min temps
-    acc[data.city].maxTemp = Math.max(acc[data.city].maxTemp, data.temp);
-    acc[data.city].minTemp = Math.min(acc[data.city].minTemp, data.temp);
-
-    // Track conditions
-    if (acc[data.city].conditions[data.condition]) {
-      acc[data.city].conditions[data.condition]++;
-    } else {
-      acc[data.city].conditions[data.condition] = 1;
-    }
-
-    return acc;
-  }, {});
-
-  // Calculate averages and dominant condition
-  const summaries = Object.entries(citySummaries).map(([city, summary]) => {
-    const avgTemp = (
-      summary.temps.reduce((sum, temp) => sum + temp, 0) / summary.temps.length
-    ).toFixed(2);
-
-    const dominantCondition = Object.keys(summary.conditions).reduce((a, b) =>
-      summary.conditions[a] > summary.conditions[b] ? a : b
-    );
-
-    return {
-      city,
-      avgTemp,
-      maxTemp: summary.maxTemp.toFixed(2),
-      minTemp: summary.minTemp.toFixed(2),
-      dominantCondition,
-    };
-  });
-
-  return summaries;
-};
-
-// Store summaries in DB
-const storeWeatherSummaries = async (summaries) => {
-  for (const summary of summaries) {
-    await createWeatherSummary(summary);
   }
-};
 
-module.exports = { fetchWeatherData, calculateDailySummary, storeWeatherSummaries };
+  async processWeatherData(data) {
+    await WeatherData.create(data);
+    await this.updateDailySummary(data);
+    await this.checkAlertThresholds(data);
+  }
+  
+  async updateDailySummary(data) {
+    const date = new Date(data.dt * 1000).toISOString().split('T')[0];
+    const summary = await DailySummary.findOne({ city: data.city, date });
+
+    if (summary) {
+      const weatherData = await WeatherData.find({ city: data.city, dt: { $gte: new Date(date).getTime() / 1000 } });
+      const temperatures = weatherData.map(w => w.temp).filter(temp => !isNaN(temp));
+      const humidities = weatherData.map(w => w.humidity).filter(humidity => !isNaN(humidity));
+      const windSpeeds = weatherData.map(w => w.wind_speed).filter(speed => !isNaN(speed));
+      const conditions = weatherData.map(w => w.main);
+
+      summary.avgTemp = this.calculateAverage(temperatures);
+      summary.maxTemp = Math.max(...temperatures);
+      summary.minTemp = Math.min(...temperatures);
+      summary.dominantCondition = this.getDominantCondition(conditions);
+      summary.avgHumidity = this.calculateAverage(humidities) || 0;
+      summary.avgWindSpeed = this.calculateAverage(windSpeeds) || 0;
+
+      await summary.save();
+    } else {
+      await DailySummary.create({
+        city: data.city,
+        date,
+        avgTemp: data.temp || 0,
+        maxTemp: data.temp || 0,
+        minTemp: data.temp || 0,
+        dominantCondition: data.main,
+        avgHumidity: data.humidity || 0,
+        avgWindSpeed: data.wind_speed || 0
+      });
+    }
+  }
+
+  async checkAlertThresholds(data) {
+    const alertConfig = await AlertConfig.findOne({ city: data.city });
+    if (!alertConfig) return;
+
+    const recentReadings = await WeatherData.find({
+      city: data.city,
+      dt: { $gte: Date.now() / 1000 - 30 * 60 }
+    }).sort('-dt').limit(2);
+
+    if (recentReadings.length >= 2 &&
+        recentReadings.every(reading => reading.temp > alertConfig.threshold)) {
+      const alert = await Alert.create({
+        city: data.city,
+        message: `Temperature exceeded ${alertConfig.threshold}°C for consecutive readings`,
+        temperature: data.temp,
+        threshold: alertConfig.threshold
+      });
+      this.io.emit('weatherAlert', alert);
+      console.log(`Alert triggered for ${data.city}: ${alert.message}`);
+      if (alertConfig.email) {
+        console.log(`Sending email alert to ${alertConfig.email}`);
+        // Implement email sending logic here
+      }
+    }
+  }
+
+  kelvinToCelsius(kelvin) {
+    return Math.round((kelvin - 273.15) * 10) / 10;
+  }
+
+  calculateAverage(numbers) {
+    if (numbers.length === 0) return 0;
+    return Math.round((numbers.reduce((a, b) => a + b) / numbers.length) * 10) / 10;
+  }
+
+  getDominantCondition(conditions) {
+    const counts = conditions.reduce((acc, curr) => {
+      acc[curr] = (acc[curr] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+  }
+}
+
+module.exports = WeatherService;

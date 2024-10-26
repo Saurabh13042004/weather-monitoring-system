@@ -1,16 +1,15 @@
 const express = require('express');
-const router = express.Router();
-const { fetchWeatherData, saveDailySummary, checkAlerts } = require('../controllers/weatherController');
-const WeatherSummary = require('../models/weatherSummary');
+const weatherController = require('../controllers/weatherController');
 
-router.get('/summaries', async (req, res) => {
-    try {
-        const summaries = await WeatherSummary.find().sort({ date: -1 });
-        res.status(200).json(summaries);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error retrieving summaries' });
-    }
-});
+const router = express.Router();
+
+router.get('/current', weatherController.getCurrentWeather);
+router.get('/historical/:city', weatherController.getHistoricalWeather);
+router.get('/daily-summary/:city', weatherController.getDailySummary);
+router.get('/alerts', weatherController.getAlerts);
+router.get('/config', weatherController.getConfig);
+router.post('/config', weatherController.updateConfig);
+router.get('/alert-config', weatherController.getAlertConfig);
+router.post('/alert-config', weatherController.updateAlertConfig);
 
 module.exports = router;

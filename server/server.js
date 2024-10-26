@@ -1,56 +1,42 @@
+require('dotenv').config();
 const express = require('express');
+const mongoose = require('mongoose');
 const http = require('http');
 const socketIo = require('socket.io');
-const cors = require('cors');
+const WeatherService = require('./services/weatherService');
 const weatherRoutes = require('./routes/weatherRoutes');
-const mongoose = require('mongoose');
-const dotenv = require('dotenv');
-const { fetchWeatherData, saveDailySummary, checkAlerts } = require('./controllers/weatherController'); // Import the functions
-
-dotenv.config();
+const weatherController = require('./controllers/weatherController');
+const cors = require('cors');
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
-
 app.use(cors());
-app.use(express.json());
-app.use('/api/weather', weatherRoutes); // Use weather routes
-
-// MongoDB connection
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.error('MongoDB connection error:', err));
-
-// Socket.IO setup for real-time updates
-io.on('connection', (socket) => {
-    console.log('New client connected');
-
-    socket.on('disconnect', () => {
-        console.log('Client disconnected');
-    });
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: { origin: '*' }
 });
 
-// Define cities to monitor and thresholds
-const citiesToMonitor = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
-const thresholds = { temperature: 35 }; // User-configurable thresholds
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-// Function to fetch and save weather data every 5 minutes
-async function fetchAndSaveWeatherData() {
-    try {
-        const weatherUpdates = await fetchWeatherData(citiesToMonitor);
-        await saveDailySummary(weatherUpdates);
-        await checkAlerts(weatherUpdates, thresholds);
-    } catch (error) {
-        console.error('Error fetching and saving weather data:', error);
-    }
+app.use(express.json());
+app.use('/api', weatherRoutes);
+
+const weatherService = new WeatherService(io);
+weatherController.setWeatherService(weatherService);
+
+io.on('connection', (socket) => {
+  console.log('Client connected');
+  socket.on('disconnect', () => console.log('Client disconnected'));
+});
+
+async function startServer() {
+  await weatherService.startMonitoring();
+
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 }
 
-// Fetch weather data at an interval (e.g., every 5 minutes)
-setInterval(fetchAndSaveWeatherData, 1000 * 60 * 5); // Change to 5 minutes
-
-// Start the server
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
+startServer().catch(console.error);
