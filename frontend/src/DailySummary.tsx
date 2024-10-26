@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = 'https://weather-monitoring-system-321u.onrender.com/api';
 
 interface DailySummaryData {
   date: string;

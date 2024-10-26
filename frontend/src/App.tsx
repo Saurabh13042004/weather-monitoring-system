@@ -11,8 +11,8 @@ import DailySummary from './DailySummary';
 import ConfigPanel from './ConfigPanel';
 import AlertConfig from './AlertConfig';
 
-const API_BASE_URL = 'http://localhost:3000/api';
-const SOCKET_URL = 'http://localhost:3000';
+const API_BASE_URL = 'https://weather-monitoring-system-321u.onrender.com/api';
+const SOCKET_URL = 'https://weather-monitoring-system-321u.onrender.com/';
 
 const cities = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
 

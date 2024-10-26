@@ -7,25 +7,15 @@ services:
       dockerfile: Dockerfile
     image: myapp-server
     container_name: myapp-node-server
-    command: /usr/src/app/node_modules/.bin/nodemon server.js
+    command: /usr/src/app/node_modules/.bin/node server.js
     volumes:
       - ./server/:/usr/src/app
       - /usr/src/app/node_modules
     ports:
       - "5000:5000"
-    depends_on:
-      - mongo
     env_file: ./server/.env
     environment:
       - NODE_ENV=development
-    networks:
-      - app-network
-  mongo:
-    image: mongo
-    volumes:
-      - data-volume:/data/db
-    ports:
-      - "27017:27017"
     networks:
       - app-network
   frontend:
