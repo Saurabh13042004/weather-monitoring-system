@@ -12,7 +12,7 @@ import ConfigPanel from './ConfigPanel';
 import AlertConfig from './AlertConfig';
 
 const API_BASE_URL = 'https://weather-monitoring-system-321u.onrender.com/api';
-const SOCKET_URL = 'https://weather-monitoring-system-321u.onrender.com/';
+const SOCKET_URL = 'https://weather-monitoring-system-321u.onrender.com';
 
 const cities = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
 
@@ -44,7 +44,6 @@ export default function App() {
   const [config, setConfig] = useState<Config>({ updateInterval: 60 });
   const [selectedCity, setSelectedCity] = useState('Delhi');
   const [temperatureUnit, setTemperatureUnit] = useState('celsius');
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const socket: Socket = io(SOCKET_URL);
@@ -73,7 +72,6 @@ export default function App() {
   }, []);
 
   const fetchInitialData = async () => {
-    setLoading(true);
     try {
       const [weatherResponse, alertsResponse, configResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/current`),
@@ -91,8 +89,6 @@ export default function App() {
     } catch (error) {
       console.error('Error fetching initial data:', error);
       toast.error('Failed to fetch initial data');
-    } finally{
-      setLoading(false);
     }
   };
 
@@ -127,13 +123,7 @@ export default function App() {
       <div className="w-full max-w-4xl">
         <Toaster position="top-right" />
         <h1 className="text-3xl font-bold mb-4 text-center">Weather Monitoring System</h1>
-        {loading ? (
-          <div className="flex flex-col items-center">
-            <div className="loader mb-4" /> {/* Add a loader animation here */}
-            <p className="text-center text-gray-600">Server is deployed on a free instance; this may take up to a minute. Please wait...</p>
-          </div>
-        ) : (
-          <Tabs defaultValue="current" className="w-full">
+        <Tabs defaultValue="current" className="w-full">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="current">Current Weather</TabsTrigger>
             <TabsTrigger value="historical">Historical Data</TabsTrigger>
@@ -148,7 +138,7 @@ export default function App() {
             <WeatherChart cities={cities} temperatureUnit={temperatureUnit} selectedCity={selectedCity} onCityChange={handleCityChange} />
           </TabsContent>
           <TabsContent value="summary">
-            <DailySummary city={selectedCity} temperatureUnit={temperatureUnit} />
+            <DailySummary cities={cities} temperatureUnit={temperatureUnit} />
           </TabsContent>
           <TabsContent value="alerts">
             <AlertsLog alerts={alerts} />
@@ -165,8 +155,6 @@ export default function App() {
             </div>
           </TabsContent>
         </Tabs>
-        )}
-  
       </div>
     </div>
   );
