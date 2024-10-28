@@ -11,6 +11,7 @@ import DailySummary from './DailySummary';
 import ConfigPanel from './ConfigPanel';
 import AlertConfig from './AlertConfig';
 
+
 const API_BASE_URL = 'https://weather-monitoring-system-321u.onrender.com/api';
 const SOCKET_URL = 'https://weather-monitoring-system-321u.onrender.com';
 
@@ -45,7 +46,6 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState('Delhi');
   const [temperatureUnit, setTemperatureUnit] = useState('celsius');
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     const socket: Socket = io(SOCKET_URL);
 
@@ -61,7 +61,7 @@ export default function App() {
     });
 
     socket.on('weatherAlert', (alert: Alert) => {
-      setAlerts(prevAlerts => [...prevAlerts, alert]);
+      setAlerts(prevAlerts => [alert, ...prevAlerts]);
       toast.error(`Alert: ${alert.message} in ${alert.city}`);
     });
 

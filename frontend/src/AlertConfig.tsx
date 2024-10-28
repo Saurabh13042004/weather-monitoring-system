@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { toast } from 'react-hot-toast';
 
 const API_BASE_URL = 'https://weather-monitoring-system-321u.onrender.com/api';
 
@@ -47,13 +48,14 @@ const AlertConfig = () => {
         body: JSON.stringify({ city: selectedCity, threshold: alertThreshold, email }),
       });
       if (response.ok) {
-        alert('Alert configuration updated successfully');
+        toast.success('Alert configuration updated successfully');
+        // The backend will now automatically check for alerts
       } else {
         throw new Error('Failed to update alert configuration');
       }
     } catch (error) {
       console.error('Error updating alert configuration:', error);
-      alert('Failed to update alert configuration');
+      toast.error('Failed to update alert configuration');
     }
   };
 
