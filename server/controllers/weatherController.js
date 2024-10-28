@@ -138,6 +138,12 @@ exports.updateAlertConfig = async (req, res) => {
     alertConfig.threshold = threshold;
     alertConfig.email = email;
     await alertConfig.save();
+
+    if (weatherService) {
+      const latestWeatherData = await WeatherData.findOne({ city }).sort('-dt');
+      await weatherService.checkAlertThresholds(latestWeatherData)
+    }
+
     res.json(alertConfig);
   } catch (error) {
     console.error("Error updating alert configuration:", error);
