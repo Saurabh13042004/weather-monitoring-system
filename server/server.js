@@ -20,7 +20,7 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch(err => console.error('MongoDB connection error:', err));
 
 app.use(express.json());
-app.get('/',(req,res){
+app.get('/',(req,res)=>{
   res.send("server is started")
 })
 app.use('/api', weatherRoutes);
